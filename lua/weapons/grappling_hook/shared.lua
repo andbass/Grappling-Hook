@@ -164,7 +164,7 @@ function SWEP:HookCollide(phys, data)
     self.collideData = data
 
     self:AttachHook()
-    self:CreateEffect(traceResult)
+    self:CreateEffect()
 end
 
 function SWEP:AttachHook()
