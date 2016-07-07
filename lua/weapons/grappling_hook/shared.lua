@@ -9,7 +9,7 @@ local hookContactSounds = {
     Sound("physics/metal/sawblade_stick2.wav"),
     Sound("physics/metal/sawblade_stick3.wav"),
 }
-hookReleaseSound = Sound("buttons/weapon_confirm.wav")
+local hookReleaseSound = Sound("buttons/weapon_confirm.wav")
 
 local hookMdl      = "models/props_junk/meathook001a.mdl"
 local hookMdlScale = 0.7
