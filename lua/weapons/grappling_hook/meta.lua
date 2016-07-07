@@ -8,7 +8,7 @@ SWEP.Instructions          = [[
 
     Press Reload to bring it back in.
 
-    When the hook latches onto a surface, Right Click to pull yourself towards the hook.  Crouch to extend the rope and rappel.
+    When the hook latches onto a surface, Right Click to pull yourself towards the hook.  Use to extend the rope and rappel.
     If you pulled yourself all the way to the attached hook, press Jump to give yourself a boost up a surface and onto a ledge.
 ]]
 
