@@ -18,7 +18,7 @@ local hookMass   = 10
 local hookSpeed  = 25000
 
 local boostPower  = 285
-local swingSpeed  = 15
+local swingSpeed  = 10
 local reloadSpeed = 1.7
 
 local inAirGrappleStrength    = 15
@@ -27,8 +27,16 @@ local onGroundGrappleStrength = 50
 local reelInSpeed = 4
 local rappelSpeed = 3
 
+local AttachState = {
+    Nothing = 0,
+    World   = 1,
+    Prop    = 2,
+}
+
 function SWEP:SetupDataTables()
     self:NetworkVar("Entity", 0, "Hook")
+    self:NetworkVar("Int", 0, "AttachState")
+    self:NetworkVar("Float", 0, "TargetRopeDist")
 end
 
 function SWEP:Initialize()
@@ -37,7 +45,7 @@ function SWEP:Initialize()
 end
 
 function SWEP:CanPrimaryAttack()
-    return not IsValid(self.hook)
+    return not IsValid(self:GetHook())
 end
 
 function SWEP:PrimaryAttack()
@@ -52,43 +60,45 @@ function SWEP:PrimaryAttack()
     self:CreateHook()
 end
 
-function SWEP:CanSecondaryAttack()
-    return IsValid(self.hook) and self.hookAttached
+-- Unused, as any functionality involving velocity changes must be handled specially
+function SWEP:SecondaryAttack() end
+
+function SWEP:CanReelIn()
+    local hook = self:GetHook()
+
+    return IsValid(hook) and self:IsHookAttached()
 end
 
-function SWEP:SecondaryAttack()
-    if not self:CanSecondaryAttack() then return end
+function SWEP:ReelIn()
+    if not self:CanReelIn() then return end
+    local hook = self:GetHook()
 
-    self.targetRopeDistance = math.max(self.targetRopeDistance - reelInSpeed, 50)
+    self:SetTargetRopeDist(math.max(self:GetTargetRopeDist() - reelInSpeed, 50))
 
     local ply = self.Owner
     local plyPos = ply:GetPos()
 
-    local playerToHookDir = self.hook:GetPos() - plyPos
+    local playerToHookDir = hook:GetPos() - plyPos
     if playerToHookDir.z > 0 and ply:IsOnGround() then -- Give player slight boost to get off ground, if they're ascending
         plyPos.z = plyPos.z + 1
         ply:SetPos(plyPos)
     end
 
-    self:PullOwner()
+    return self:PullOwner()
 end
 
 function SWEP:Cleanup()
-    self.hookAttached = false
+    self:SetAttachState(AttachState.Nothing)
 
-    if IsValid(self.hook) then 
-        self.hook:Remove() 
-        self.hook = nil
-    end
-
-    if IsValid(self.rope) then 
-        self.rope:Remove() 
-        self.rope = nil
+    local hook = self:GetHook()
+    if IsValid(hook) then 
+        hook:Remove()
+        self:SetHook(nil)
     end
 end
 
 function SWEP:Reload()
-    if not IsValid(self:GetHook()) then return end
+    if not IsValid(self:GetHook()) and not self:IsHookAttached() then return end
 
     self:EmitSound(hookReleaseSound)
 
@@ -104,7 +114,36 @@ function SWEP:Reload()
     if SERVER then self:Cleanup() end
 end
 
+function SWEP:HolsterReload()
+    self:EmitSound(hookReleaseSound)
+    if SERVER then self:Cleanup() end
+end
+
+function SWEP:Holster()
+    if CLIENT then
+        hook.Add("PostDrawOpaqueRenderables", "grapple_Render", function()
+            self:DrawHolsteredRope()
+        end)
+    elseif SERVER then
+        hook.Add("Think", "grapple_Think", function()
+            self:Think()
+        end)
+    end
+
+    return true
+end
+
+function SWEP:Deploy()
+    self:CallOnClient("Deploy")
+
+    if SERVER then hook.Remove("Think", "grapple_Think") end
+    if CLIENT then hook.Remove("PostDrawOpaqueRenderables", "grapple_Render") end
+
+    return true
+end
+
 function SWEP:OnRemove()
+    self:Deploy()
     self:Cleanup()
 end
 
@@ -140,8 +179,7 @@ function SWEP:CreateHook()
     local vel = aimVec * hookSpeed
     phys:ApplyForceCenter(vel)
 
-    self.hook = ent
-    self:SetHook(self.hook)
+    self:SetHook(ent)
 end
 
 function SWEP:CreateRope()
@@ -157,7 +195,7 @@ function SWEP:CreateRope()
 end
 
 function SWEP:HookCollide(phys, data)
-    if self.hookAttached then return end
+    if self:IsHookAttached() then return end
 
     sound.Play(table.Random(hookContactSounds), data.HitPos, 150, 100, 1)
 
@@ -168,10 +206,11 @@ function SWEP:HookCollide(phys, data)
 end
 
 function SWEP:AttachHook()
+    local hook = self:GetHook()
     local data = self.collideData
 
-    self.hook:GetPhysicsObject():EnableMotion(false)
-    self.hook:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
+    hook:GetPhysicsObject():EnableMotion(false)
+    hook:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
 
     self.Owner:ViewPunch(Angle(-2, 0, 0))
     
@@ -183,23 +222,29 @@ function SWEP:AttachHook()
     local pushAmount = 12 + 2 * (1 - cosBetween)
 
     local newPos = data.HitPos - impactDir * pushAmount
-    self.hook:SetPos(newPos)
+    hook:SetPos(newPos)
 
+    local attachState = AttachState.World
     if not data.HitEntity:IsWorld() then
-        self.hook:SetMoveType(MOVETYPE_NONE)
-        self.hook:SetParent(data.HitEntity)
+        hook:SetMoveType(MOVETYPE_NONE)
+        hook:SetParent(data.HitEntity)
 
-        local hookPhys = self.hook:GetPhysicsObject()
+        local hookPhys = hook:GetPhysicsObject()
         hookPhys:EnableMotion(true)
+
+        attachState = AttachState.Prop
     end
 
     local initialTug = 20
     local upwardness = math.max(impactDir:Dot(Vector(0, 0, 1)), 0)
     local tug = initialTug + 10 * upwardness
 
-    self.targetRopeDistance = self.hook:GetPos():Distance(self.Owner:GetPos()) - tug
+    self:SetTargetRopeDist(hook:GetPos():Distance(self.Owner:GetPos()) - tug)
+    self:SetAttachState(attachState)
+end
 
-    self.hookAttached = true
+function SWEP:IsHookAttached()
+    return self:GetAttachState() ~= AttachState.Nothing
 end
 
 function SWEP:CreateEffect()
@@ -220,29 +265,33 @@ function SWEP:CreateEffect()
 end
 
 function SWEP:Rappel()
-    self.targetRopeDistance = self.targetRopeDistance + rappelSpeed
+    if CLIENT then return end
+
+    self:SetTargetRopeDist(self:GetTargetRopeDist() + rappelSpeed)
 end
 
 function SWEP:Swing()
     local ply = self.Owner
+    local hook = self:GetHook()
 
     local multiplier = swingSpeed
     if ply:KeyDown(IN_BACK) then multiplier = -multiplier end
 
-    local playerToHookDir = self.hook:GetPos() - ply:GetPos()
+    local playerToHookDir = hook:GetPos() - ply:GetPos()
     playerToHookDir:Normalize()
 
     local swingDir = playerToHookDir:Cross(ply:GetRight())
     swingDir:Normalize()
 
-    ply:SetVelocity(swingDir * multiplier)
+    return swingDir * multiplier
 end
 
 function SWEP:PullOwner()
-    if not IsValid(self.hook) then return end
+    local hook = self:GetHook()
+    if not IsValid(hook) then return end
 
     local ply = self.Owner
-    local playerToHookDir = self.hook:GetPos() - ply:GetPos()
+    local playerToHookDir = hook:GetPos() - ply:GetPos()
 
     playerToHookDir:Normalize()
     playerToHookDir.z = math.max(playerToHookDir.z, 0)
@@ -259,34 +308,58 @@ function SWEP:PullOwner()
         vel.z = vel.z - ply:GetVelocity().z * 0.5
     end
 
-    ply:SetVelocity(vel)
+    return vel
 end
 
 function SWEP:Think()
     local ply = self.Owner
+    local hook = self:GetHook()
 
-    if not IsValid(self.hook) then
-        self.hookAttached = false
+    if not IsValid(hook) then
+        if self:IsHookAttached() then -- if the hook is attached to a destructible object that is destroyed, we have to cleanup
+            self:Reload()
+        end
+
         return
-    elseif self.hookAttached then
-        if ply:KeyDown(IN_USE) then
+    elseif self:IsHookAttached() then
+        local newVel = Vector()
+        local curDistance = ply:GetPos():Distance(hook:GetPos())
+        local reeledIn = false
+
+        if ply:GetActiveWeapon() ~= self then
+            if ply:KeyDown(IN_SPEED) then
+                self:SecondaryAttack()
+            elseif ply:KeyDown(IN_DUCK) then
+                self:HolsterReload()
+            end
+        elseif ply:KeyDown(IN_ATTACK2) then
+            newVel = newVel + self:ReelIn()
+            reeledIn = true
+        end
+
+        if not reeledIn and ply:KeyDown(IN_USE) then
             self:Rappel()
         end
 
         if not ply:IsOnGround() and (ply:KeyDown(IN_FORWARD) or ply:KeyDown(IN_BACK)) then
-            self:Swing()
+            newVel = newVel + self:Swing()
         end
 
-        local curDistance = ply:GetPos():Distance(self.hook:GetPos())
-        if curDistance > self.targetRopeDistance then
-            self:PullOwner()
+        if not reeledIn and curDistance > self:GetTargetRopeDist() then
+            newVel = newVel + self:PullOwner()
         else
             if curDistance < 100 and ply:KeyDown(IN_JUMP) and not ply:IsOnGround() then
-                self:Reload()
+                if ply:GetActiveWeapon() == self then
+                    self:Reload()
+                else
+                    self:HolsterReload()
+                end
 
                 local zVel = math.max(boostPower - ply:GetVelocity().z * 0.5, 0)
-                ply:SetVelocity(Vector(0, 0, zVel))
+                newVel = newVel + Vector(0, 0, zVel)
             end
         end
+
+        ply:SetVelocity(newVel)
     end
 end

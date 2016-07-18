@@ -45,3 +45,18 @@ function SWEP:DrawWorldModel()
 
     self.Weapon:DrawModel()
 end
+
+function SWEP:DrawHolsteredRope()
+    local hook = self:GetHook()
+
+    if IsValid(hook) then
+        local ply = self.Owner
+        render.SetMaterial(ropeMat)
+
+        local hookPos = HookOffset(hook)
+        local beltPos = ply:GetPos() + ply:GetForward() * 3 - ply:GetRight() * 6 + ply:GetUp() * 10
+
+        render.DrawBeam(beltPos, hookPos, ropeWidth, 0, 2, ropeColor)
+    end
+end
+
