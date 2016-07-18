@@ -182,18 +182,6 @@ function SWEP:CreateHook()
     self:SetHook(ent)
 end
 
-function SWEP:CreateRope()
-    local ply = self.Owner
-
-    local rope = constraint.CreateKeyframeRope(
-        Vector(), ropeWidth, ropeMat, nil,      -- Pos, width, material, constraint
-        ply, Vector(), 0,                       -- Player ent, offset, bone
-        self.hook, Vector(0, 3, 12), 0          -- Hook ent, offset, bone
-    )
-
-    self.rope = rope
-end
-
 function SWEP:HookCollide(phys, data)
     if self:IsHookAttached() then return end
 
@@ -331,7 +319,8 @@ function SWEP:Think()
 
         if ply:GetActiveWeapon() ~= self then
             if ply:KeyDown(IN_SPEED) then
-                self:SecondaryAttack()
+                newVel = newVel + self:ReelIn()
+                reeledIn = true
             elseif ply:KeyDown(IN_DUCK) then
                 self:HolsterReload()
             end
