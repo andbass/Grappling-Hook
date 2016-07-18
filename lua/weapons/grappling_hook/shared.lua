@@ -311,16 +311,17 @@ function SWEP:PullOwner()
     return vel
 end
 
+function SWEP:IsOwnerVaulting(curDistToHook)
+    local ply = self.Owner
+    return curDistToHook < 100 and not ply:IsOnGround() and ply:KeyDown(IN_JUMP)
+end
+
 function SWEP:Think()
     local ply = self.Owner
     local hook = self:GetHook()
 
-    if not IsValid(hook) then
-        if self:IsHookAttached() then -- if the hook is attached to a destructible object that is destroyed, we have to cleanup
-            self:Reload()
-        end
-
-        return
+    if not IsValid(hook) and self:IsHookAttached() then -- Cleanup if the hook's parent gets destroyed
+        self:Reload()
     elseif self:IsHookAttached() then
         local newVel = Vector()
         local curDistance = ply:GetPos():Distance(hook:GetPos())
@@ -347,17 +348,15 @@ function SWEP:Think()
 
         if not reeledIn and curDistance > self:GetTargetRopeDist() then
             newVel = newVel + self:PullOwner()
-        else
-            if curDistance < 100 and ply:KeyDown(IN_JUMP) and not ply:IsOnGround() then
-                if ply:GetActiveWeapon() == self then
-                    self:Reload()
-                else
-                    self:HolsterReload()
-                end
-
-                local zVel = math.max(boostPower - ply:GetVelocity().z * 0.5, 0)
-                newVel = newVel + Vector(0, 0, zVel)
+        elseif self:IsOwnerVaulting(curDistance) then
+            if ply:GetActiveWeapon() == self then
+                self:Reload()
+            else
+                self:HolsterReload()
             end
+
+            local zVel = math.max(boostPower - ply:GetVelocity().z * 0.5, 0)
+            newVel = newVel + Vector(0, 0, zVel)
         end
 
         ply:SetVelocity(newVel)
