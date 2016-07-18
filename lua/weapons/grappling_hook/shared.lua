@@ -274,6 +274,8 @@ function SWEP:Swing()
     local ply = self.Owner
     local hook = self:GetHook()
 
+    if not IsValid(hook) then return Vector() end
+
     local multiplier = swingSpeed
     if ply:KeyDown(IN_BACK) then multiplier = -multiplier end
 
@@ -288,7 +290,7 @@ end
 
 function SWEP:PullOwner()
     local hook = self:GetHook()
-    if not IsValid(hook) then return end
+    if not IsValid(hook) then return Vector() end
 
     local ply = self.Owner
     local playerToHookDir = hook:GetPos() - ply:GetPos()
