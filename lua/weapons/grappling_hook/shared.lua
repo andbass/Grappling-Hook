@@ -18,10 +18,10 @@ local hookMass   = 10
 local hookSpeed  = 25000
 
 local boostPower  = 285
-local swingSpeed  = 10
+local swingSpeed  = 7
 local reloadSpeed = 1.7
 
-local inAirGrappleStrength    = 15
+local inAirGrappleStrength    = 14
 local onGroundGrappleStrength = 50
 
 local reelInSpeed = 4
@@ -88,12 +88,14 @@ function SWEP:ReelIn()
 end
 
 function SWEP:Cleanup()
-    self:SetAttachState(AttachState.Nothing)
+    if SERVER then
+        self:SetAttachState(AttachState.Nothing)
 
-    local hook = self:GetHook()
-    if IsValid(hook) then 
-        hook:Remove()
-        self:SetHook(nil)
+        local hook = self:GetHook()
+        if IsValid(hook) then 
+            hook:Remove()
+            self:SetHook(nil)
+        end
     end
 end
 
@@ -119,7 +121,7 @@ function SWEP:HolsterReload()
     if SERVER then self:Cleanup() end
 end
 
-function SWEP:Holster()
+function SWEP:AddHooks()
     if CLIENT then
         hook.Add("PostDrawOpaqueRenderables", "grapple_Render", function()
             self:DrawHolsteredRope()
@@ -129,22 +131,31 @@ function SWEP:Holster()
             self:Think()
         end)
     end
+end
 
-    return true
+function SWEP:RemoveHooks()
+    if SERVER then
+        hook.Remove("Think", "grapple_Think")
+    elseif CLIENT then
+        hook.Remove("PostDrawOpaqueRenderables", "grapple_Render") 
+    end
 end
 
 function SWEP:Deploy()
     self:CallOnClient("Deploy")
-
-    if SERVER then hook.Remove("Think", "grapple_Think") end
-    if CLIENT then hook.Remove("PostDrawOpaqueRenderables", "grapple_Render") end
+    self:RemoveHooks()
 
     return true
 end
 
+function SWEP:Holster()
+    self:AddHooks()
+    return true
+end
+
 function SWEP:OnRemove()
-    self:Deploy()
     self:Cleanup()
+    self:RemoveHooks()
 end
 
 function SWEP:CreateHook()
