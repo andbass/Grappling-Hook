@@ -200,8 +200,11 @@ function SWEP:HookCollide(phys, data)
 
     self.collideData = data
 
-    self:AttachHook()
     self:CreateEffect()
+    timer.Simple(0, function()
+        -- Don't want to alter collision rules directly in this callback
+        self:AttachHook()
+    end)
 end
 
 function SWEP:AttachHook()
@@ -283,6 +286,9 @@ function SWEP:Swing()
 
     local swingDir = playerToHookDir:Cross(ply:GetRight())
     swingDir:Normalize()
+
+    local actualSwingDir = swingDir * multiplier
+    actualSwingDir:Normalize()
 
     return swingDir * multiplier
 end
